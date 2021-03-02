@@ -1,7 +1,7 @@
 import re
 
-import pymongo
 import scrapy
+from ..loaders import AutoyoulaLoader
 
 
 class AutoyoulaSpider(scrapy.Spider):
@@ -38,6 +38,14 @@ class AutoyoulaSpider(scrapy.Spider):
         "author": lambda resp: AutoyoulaSpider.get_author_id(resp),
     }
 
+    _car_xpaths = {
+        "title": "//div[@data-target='advert']//div[@data-target='advert-title']/text()",
+        "photos": "//div[@data-target='advert']//"
+        "figure[contains(@class, 'PhotoGallery_photo')]//img/@src",
+        "characteristics": "//div[@data-target='advert']//"
+        "h3[contains(text(), 'Характеристики')]/../div/div",
+    }
+
     @staticmethod
     def get_author_id(resp):
         marker = "window.transitState = decodeURIComponent"
@@ -49,10 +57,6 @@ class AutoyoulaSpider(scrapy.Spider):
                     return resp.urljoin(f"/user/{result[0]}") if result else None
             except TypeError:
                 pass
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.db_client = pymongo.MongoClient()
 
     def _get_follow(self, response, select_str, callback, **kwargs):
         for a in response.css(select_str):
@@ -71,10 +75,10 @@ class AutoyoulaSpider(scrapy.Spider):
         yield from self._get_follow(response, self._css_selectors["car"], self.car_parse)
 
     def car_parse(self, response):
-        data = {}
-        for key, selector in self.data_query.items():
-            try:
-                data[key] = selector(response)
-            except (ValueError, AttributeError):
-                continue
-        self.db_client["gb_parse_15_02_2021"][self.name].insert_one(data)
+        loader = AutoyoulaLoader(response=response)
+        loader.add_value("url", "")
+        loader.add_value("url", response.url)
+        for key, selector in self._car_xpaths.items():
+            loader.add_xpath(key, selector)
+
+        yield loader.load_item()
